@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>MdP Guide — Asistente Turístico y Cultural</title>
+<meta name="description" content="Actividades, clima en vivo y un asistente con IA para recorrer Mar del Plata." />
+
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0F2E38" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="MdP Guide" />
+
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body data-clima="soleado">
+
+  <!-- ===== HERO / CLIMA ===== -->
+  <header class="hero">
+    <div class="hero-top">
+      <div class="brand">
+        <div class="brand-mark">🗼</div>
+        <div class="brand-text">
+          MdP Guide
+          <small>Asistente turístico &amp; cultural</small>
+        </div>
+      </div>
+      <span class="location-pill" id="fecha-actual">Mar del Plata, AR</span>
+    </div>
+
+    <div class="weather-card">
+      <div class="weather-temp" id="weather-temp">--<sup>°C</sup></div>
+      <div class="weather-meta">
+        <span class="weather-condicion" id="weather-condicion">cargando…</span>
+        <p class="weather-desc" id="weather-desc">Consultando el clima actual…</p>
+        <p class="weather-alerta" id="weather-alerta" style="display:none;">⚠️ Alerta meteorológica vigente</p>
+      </div>
+    </div>
+
+    <div class="forecast-row" id="forecast-row">
+      <div class="forecast-chip"><div class="franja">--</div><div class="temp">--°</div></div>
+      <div class="forecast-chip"><div class="franja">--</div><div class="temp">--°</div></div>
+      <div class="forecast-chip"><div class="franja">--</div><div class="temp">--°</div></div>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ===== VISTA: INICIO ===== -->
+    <section class="view active" id="view-inicio">
+      <h2 class="section-title">Recomendado para hoy</h2>
+      <p class="section-sub">Elegido según el clima actual en Mar del Plata.</p>
+      <div class="card-list" id="inicio-actividades"></div>
+
+      <h2 class="section-title">Tip del día</h2>
+      <div id="inicio-tips"></div>
+
+      <h2 class="section-title">Sobre "La Feliz"</h2>
+      <div id="inicio-contenido"></div>
+    </section>
+
+    <!-- ===== VISTA: ACTIVIDADES ===== -->
+    <section class="view" id="view-actividades">
+      <h2 class="section-title">Actividades</h2>
+      <p class="section-sub">Filtrá por categoría o dejá que el clima elija por vos.</p>
+      <div class="chip-row" id="chip-categorias">
+        <button class="chip active" data-categoria="">Todas</button>
+      </div>
+      <div class="card-list" id="actividades-list"></div>
+    </section>
+
+    <!-- ===== VISTA: ASISTENTE IA ===== -->
+    <section class="view" id="view-asistente">
+      <h2 class="section-title">Asistente IA</h2>
+      <p class="section-sub">Contale qué te gustaría hacer y armamos un itinerario a medida.</p>
+
+      <div class="chat-wrap">
+        <div class="chat-log" id="chat-log">
+          <div class="msg ai">¡Hola! Soy tu asistente turístico de Mar del Plata 🌊. Contame qué te gustaría hacer hoy (con quién vas, cuánto tiempo tenés, qué te gusta) y armo un plan según el clima actual.</div>
+        </div>
+
+        <div class="prompt-suggestions">
+          <button class="suggestion-chip" data-prompt="Quiero un plan romántico para el atardecer">🌅 Plan romántico</button>
+          <button class="suggestion-chip" data-prompt="Voy con mis hijos chicos, ¿qué hacemos?">👨‍👩‍👧 Con chicos</button>
+          <button class="suggestion-chip" data-prompt="Tengo solo 3 horas libres esta tarde">⏱️ Tengo poco tiempo</button>
+          <button class="suggestion-chip" data-prompt="Quiero comer mariscos y después caminar por el puerto">🦐 Puerto y mariscos</button>
+        </div>
+
+        <form class="chat-input-row" id="chat-form">
+          <input type="text" id="chat-input" placeholder="Escribí tu plan ideal…" autocomplete="off" />
+          <button type="submit" class="send-btn" id="chat-send">➤</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ===== VISTA: FAVORITOS ===== -->
+    <section class="view" id="view-favoritos">
+      <h2 class="section-title">Tu cuenta</h2>
+
+      <div class="auth-box" id="auth-box">
+        <div id="auth-logged-out">
+          <p class="section-sub" style="margin-top:0;">Creá una cuenta para guardar tus favoritos.</p>
+          <input type="text" id="auth-nombre" placeholder="Nombre" />
+          <input type="email" id="auth-email" placeholder="Email" />
+          <input type="password" id="auth-password" placeholder="Contraseña" />
+          <button id="auth-registro-btn">Crear cuenta</button>
+          <p style="text-align:center;margin:10px 0 0;">
+            <button class="link-btn" id="auth-login-toggle">Ya tengo cuenta, iniciar sesión</button>
+          </p>
+        </div>
+        <div id="auth-logged-in" style="display:none;">
+          <div class="auth-status">
+            <span>👋 Hola, <strong id="auth-user-nombre"></strong></span>
+            <button class="link-btn" id="auth-logout-btn">Cerrar sesión</button>
+          </div>
+        </div>
+      </div>
+
+      <h2 class="section-title">Favoritos</h2>
+      <div class="card-list" id="favoritos-list"></div>
+    </section>
+
+  </main>
+
+  <!-- ===== BANNER DE INSTALACIÓN ===== -->
+  <div class="install-banner" id="install-banner">
+    <span>📲 Instalá MdP Guide en tu celular para acceso rápido y uso offline.</span>
+    <div style="display:flex; gap:6px;">
+      <button id="install-btn">Instalar</button>
+      <button class="dismiss" id="install-dismiss">✕</button>
+    </div>
+  </div>
+
+  <!-- ===== TAB BAR ===== -->
+  <nav class="tabbar">
+    <button class="tab-btn active" data-view="inicio">
+      <span class="icon">🏠</span>Inicio
+    </button>
+    <button class="tab-btn" data-view="actividades">
+      <span class="icon">🗺️</span>Actividades
+    </button>
+    <button class="tab-btn" data-view="asistente">
+      <span class="icon">✨</span>Asistente
+    </button>
+    <button class="tab-btn" data-view="favoritos">
+      <span class="icon">❤️</span>Favoritos
+    </button>
+  </nav>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/clima.js"></script>
+  <script src="js/actividades.js"></script>
+  <script src="js/asistente.js"></script>
+  <script src="js/favoritos.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
