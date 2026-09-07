@@ -71,6 +71,7 @@ a { color: inherit; }
   overflow: hidden;
 }
 
+/* Borra este bloque entero de tu CSS */
 .hero::after {
   content: "";
   position: absolute;
