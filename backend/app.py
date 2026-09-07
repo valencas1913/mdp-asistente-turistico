@@ -53,10 +53,17 @@ def create_app():
     app = Flask(__name__)
     CORS(app)
 
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    database_url = os.environ.get(
         "DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'mdp_guide.db')}"
     )
+    # Neon/Render/Heroku suelen dar la URL como "postgres://", pero
+    # SQLAlchemy 2.x requiere el esquema "postgresql://".
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
 
     db.init_app(app)
 
