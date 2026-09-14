@@ -1,22 +1,40 @@
 """
 ai_service.py
-Integración con un LLM (Claude, vía API de Anthropic) para generar
-itinerarios turísticos 100% personalizados, usando como contexto:
+Integración con un LLM para generar itinerarios turísticos 100%
+personalizados, usando como contexto:
   - el clima actual (obtenido de OpenWeatherMap)
   - las actividades reales guardadas en la base de datos (ACTIVIDAD)
   - la preferencia en lenguaje natural que escribe el usuario
 
-Si no hay ANTHROPIC_API_KEY configurada, se genera una respuesta local
-de demostración (sin llamar a ningún servicio externo) para que la app
-siga siendo usable.
+Proveedor: Google Gemini (tiene capa gratuita, ideal para un proyecto
+personal/escolar). Si no hay GEMINI_API_KEY configurada, se genera una
+respuesta local de demostración (sin llamar a ningún servicio externo)
+para que la app siga siendo usable.
 """
 
 import os
 import requests
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
-ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# "gemini-flash-latest" es un alias que Google mantiene apuntando siempre
+# al modelo Flash gratuito más reciente, para no tener que actualizar
+# el nombre del modelo a mano cada vez que sale una versión nueva.
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+GEMINI_URL = (
+    f"https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{GEMINI_MODEL}:generateContent"
+)
+
+SYSTEM_PROMPT = (
+    "Sos el Asistente Turístico y Cultural Autónomo de Mar del Plata, Argentina. "
+    "Tu trabajo es armar itinerarios breves, cálidos y realistas, usando SOLO las "
+    "actividades de la lista de contexto que te paso (no inventes lugares que no "
+    "estén ahí). Tené en cuenta el clima actual para priorizar actividades bajo "
+    "techo si llueve o hace mucho viento, y actividades al aire libre/playa si "
+    "está soleado. Respondé en español rioplatense, en formato de lista breve "
+    "con 3 a 5 paradas, indicando horario sugerido y una frase de por qué la "
+    "elegiste. Cerrá con un tip práctico."
+)
 
 
 def _construir_contexto(clima: dict, actividades: list) -> str:
@@ -36,55 +54,52 @@ def _construir_contexto(clima: dict, actividades: list) -> str:
 def generar_itinerario(mensaje_usuario: str, clima: dict, actividades: list) -> dict:
     """
     Genera un itinerario personalizado. Devuelve dict con 'respuesta' (texto)
-    y 'fuente' ('anthropic' o 'demo').
+    y 'fuente' ('gemini' o 'demo').
     """
     contexto = _construir_contexto(clima, actividades)
 
-    system_prompt = (
-        "Sos el Asistente Turístico y Cultural Autónomo de Mar del Plata, Argentina. "
-        "Tu trabajo es armar itinerarios breves, cálidos y realistas, usando SOLO las "
-        "actividades de la lista de contexto que te paso (no inventes lugares que no "
-        "estén ahí). Tené en cuenta el clima actual para priorizar actividades bajo "
-        "techo si llueve o hace mucho viento, y actividades al aire libre/playa si "
-        "está soleado. Respondé en español rioplatense, en formato de lista breve "
-        "con 3 a 5 paradas, indicando horario sugerido y una frase de por qué la "
-        "elegiste. Cerrá con un tip práctico."
-    )
-
-    if not ANTHROPIC_API_KEY:
+    if not GEMINI_API_KEY:
         return {"respuesta": _itinerario_demo(mensaje_usuario, clima, actividades), "fuente": "demo"}
 
     try:
         resp = requests.post(
-            ANTHROPIC_URL,
+            GEMINI_URL,
             headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
+                "x-goog-api-key": GEMINI_API_KEY,
+                "Content-Type": "application/json",
             },
             json={
-                "model": ANTHROPIC_MODEL,
-                "max_tokens": 700,
-                "system": system_prompt,
-                "messages": [
+                "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                "contents": [
                     {
                         "role": "user",
-                        "content": (
-                            f"CONTEXTO:\n{contexto}\n\n"
-                            f"PEDIDO DEL USUARIO: {mensaje_usuario}"
-                        ),
+                        "parts": [
+                            {
+                                "text": (
+                                    f"CONTEXTO:\n{contexto}\n\n"
+                                    f"PEDIDO DEL USUARIO: {mensaje_usuario}"
+                                )
+                            }
+                        ],
                     }
                 ],
+                "generationConfig": {"maxOutputTokens": 700},
             },
             timeout=30,
         )
         resp.raise_for_status()
         data = resp.json()
-        texto = "".join(
-            block.get("text", "") for block in data.get("content", []) if block.get("type") == "text"
-        )
-        return {"respuesta": texto.strip() or _itinerario_demo(mensaje_usuario, clima, actividades),
-                "fuente": "anthropic"}
+
+        candidatos = data.get("candidates", [])
+        texto = ""
+        if candidatos:
+            partes = candidatos[0].get("content", {}).get("parts", [])
+            texto = "".join(p.get("text", "") for p in partes)
+
+        return {
+            "respuesta": texto.strip() or _itinerario_demo(mensaje_usuario, clima, actividades),
+            "fuente": "gemini",
+        }
     except requests.RequestException as e:
         return {
             "respuesta": _itinerario_demo(mensaje_usuario, clima, actividades),
@@ -109,7 +124,7 @@ def _itinerario_demo(mensaje_usuario: str, clima: dict, actividades: list) -> st
         lineas.append(f"   {a['descripcion']}")
     lineas.append("")
     lineas.append(
-        "💡 Tip: configurá tu ANTHROPIC_API_KEY en el backend para recibir "
+        "💡 Tip: configurá tu GEMINI_API_KEY en el backend para recibir "
         "itinerarios generados por IA totalmente personalizados según lo que escribas."
     )
     return "\n".join(lineas)
