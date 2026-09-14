@@ -83,7 +83,10 @@ def generar_itinerario(mensaje_usuario: str, clima: dict, actividades: list) -> 
                         ],
                     }
                 ],
-                "generationConfig": {"maxOutputTokens": 700},
+                "generationConfig": {
+                    "maxOutputTokens": 1024,
+                    "thinkingConfig": {"thinkingBudget": 0},
+                },
             },
             timeout=30,
         )
@@ -96,9 +99,12 @@ def generar_itinerario(mensaje_usuario: str, clima: dict, actividades: list) -> 
             partes = candidatos[0].get("content", {}).get("parts", [])
             texto = "".join(p.get("text", "") for p in partes)
 
+        if texto.strip():
+            return {"respuesta": texto.strip(), "fuente": "gemini"}
         return {
-            "respuesta": texto.strip() or _itinerario_demo(mensaje_usuario, clima, actividades),
-            "fuente": "gemini",
+            "respuesta": _itinerario_demo(mensaje_usuario, clima, actividades),
+            "fuente": "demo",
+            "error": "Gemini devolvió una respuesta vacía",
         }
     except requests.RequestException as e:
         return {
