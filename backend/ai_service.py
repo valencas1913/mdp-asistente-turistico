@@ -1,28 +1,23 @@
 """
 ai_service.py
-Integración con un LLM para generar itinerarios turísticos 100%
-personalizados, usando como contexto:
-  - el clima actual (obtenido de OpenWeatherMap)
-  - las actividades reales guardadas en la base de datos (ACTIVIDAD)
-  - la preferencia en lenguaje natural que escribe el usuario
+Integración con DeepSeek (API compatible con OpenAI) para generar
+itinerarios turísticos personalizados usando como contexto:
+  - el clima actual (OpenWeatherMap)
+  - las actividades reales de la base de datos
+  - lo que escribe el usuario en lenguaje natural
 
-Proveedor: Google Gemini (tiene capa gratuita, ideal para un proyecto
-personal/escolar). Si no hay GEMINI_API_KEY configurada, se genera una
-respuesta local de demostración (sin llamar a ningún servicio externo)
-para que la app siga siendo usable.
+Si no hay DEEPSEEK_API_KEY configurada, o si DeepSeek falla, se devuelve
+un itinerario de demostración armado localmente para que la app siga andando.
 """
 
 import os
+import time
 import requests
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-# "gemini-flash-latest" es un alias que Google mantiene apuntando siempre
-# al modelo Flash gratuito más reciente, para no tener que actualizar
-# el nombre del modelo a mano cada vez que sale una versión nueva.
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
-GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{GEMINI_MODEL}:generateContent"
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
+DEEPSEEK_URL = os.environ.get(
+    "DEEPSEEK_URL", "https://api.deepseek.com/chat/completions"
 )
 
 SYSTEM_PROMPT = (
@@ -51,71 +46,74 @@ def _construir_contexto(clima: dict, actividades: list) -> str:
     )
 
 
-def generar_itinerario(mensaje_usuario: str, clima: dict, actividades: list) -> dict:
-    """
-    Genera un itinerario personalizado. Devuelve dict con 'respuesta' (texto)
-    y 'fuente' ('gemini' o 'demo').
-    """
-    contexto = _construir_contexto(clima, actividades)
-
-    if not GEMINI_API_KEY:
-        return {"respuesta": _itinerario_demo(mensaje_usuario, clima, actividades), "fuente": "demo"}
-
-    try:
-        resp = requests.post(
-            GEMINI_URL,
-            headers={
-                "x-goog-api-key": GEMINI_API_KEY,
-                "Content-Type": "application/json",
-            },
-            json={
-                "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-                "contents": [
-                    {
-                        "role": "user",
-                        "parts": [
-                            {
-                                "text": (
-                                    f"CONTEXTO:\n{contexto}\n\n"
-                                    f"PEDIDO DEL USUARIO: {mensaje_usuario}"
-                                )
-                            }
-                        ],
-                    }
-                ],
-                "generationConfig": {
-                    "maxOutputTokens": 1024,
-                    "thinkingConfig": {"thinkingBudget": 0},
+def _llamar_deepseek(mensaje_usuario: str, contexto: str) -> str:
+    resp = requests.post(
+        DEEPSEEK_URL,
+        headers={
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": DEEPSEEK_MODEL,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"CONTEXTO:\n{contexto}\n\nPEDIDO DEL USUARIO: {mensaje_usuario}",
                 },
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+            ],
+            "max_tokens": 1024,
+            "stream": False,
+            # sin "pensar" de más: más rápido y no gasta tokens en razonamiento
+            "thinking": {"type": "disabled"},
+        },
+        timeout=45,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return (data["choices"][0]["message"].get("content") or "").strip()
 
-        candidatos = data.get("candidates", [])
-        texto = ""
-        if candidatos:
-            partes = candidatos[0].get("content", {}).get("parts", [])
-            texto = "".join(p.get("text", "") for p in partes)
 
-        if texto.strip():
-            return {"respuesta": texto.strip(), "fuente": "gemini"}
+def generar_itinerario(mensaje_usuario: str, clima: dict, actividades: list) -> dict:
+    """Devuelve {'respuesta': texto, 'fuente': 'deepseek' | 'demo'} (+ 'error' si falló)."""
+    if not DEEPSEEK_API_KEY:
         return {
             "respuesta": _itinerario_demo(mensaje_usuario, clima, actividades),
             "fuente": "demo",
-            "error": "Gemini devolvió una respuesta vacía",
+            "error": "Falta DEEPSEEK_API_KEY en el servidor",
         }
-    except requests.RequestException as e:
-        return {
-            "respuesta": _itinerario_demo(mensaje_usuario, clima, actividades),
-            "fuente": "demo",
-            "error": str(e),
-        }
+
+    contexto = _construir_contexto(clima, actividades)
+    ultimo_error = ""
+
+    # hasta 2 intentos: los errores pasajeros (429/500/503, timeouts) suelen resolverse solos
+    for intento in range(2):
+        try:
+            texto = _llamar_deepseek(mensaje_usuario, contexto)
+            if texto:
+                return {"respuesta": texto, "fuente": "deepseek"}
+            ultimo_error = "DeepSeek devolvió una respuesta vacía"
+        except requests.HTTPError as e:
+            cuerpo = e.response.text[:300] if e.response is not None else ""
+            ultimo_error = f"HTTP {e.response.status_code if e.response is not None else '?'}: {cuerpo}"
+        except requests.RequestException as e:
+            ultimo_error = str(e)
+        except (KeyError, IndexError, ValueError) as e:
+            ultimo_error = f"Respuesta inesperada de DeepSeek: {e}"
+
+        print(f"[ai_service] intento {intento + 1} falló: {ultimo_error}", flush=True)
+        if intento == 0:
+            time.sleep(1.5)
+
+    return {
+        "respuesta": _itinerario_demo(mensaje_usuario, clima, actividades),
+        "fuente": "demo",
+        "error": ultimo_error,
+    }
 
 
 def _itinerario_demo(mensaje_usuario: str, clima: dict, actividades: list) -> str:
-    """Fallback simple sin LLM: ordena actividades por compatibilidad con el clima."""
+    """Fallback sin IA: ordena actividades según compatibilidad con el clima."""
     condicion = clima.get("condicion", "cualquiera")
     compatibles = [a for a in actividades if a["recomendado_clima"] in (condicion, "cualquiera")]
     elegidas = (compatibles or actividades)[:4]
@@ -129,8 +127,5 @@ def _itinerario_demo(mensaje_usuario: str, clima: dict, actividades: list) -> st
         lineas.append(f"{i}. **{a['nombre']}** ({a['zona']}) — {a['horario']}")
         lineas.append(f"   {a['descripcion']}")
     lineas.append("")
-    lineas.append(
-        "💡 Tip: configurá tu GEMINI_API_KEY en el backend para recibir "
-        "itinerarios generados por IA totalmente personalizados según lo que escribas."
-    )
+    lineas.append("💡 El asistente de IA no está disponible en este momento, probá de nuevo en un rato.")
     return "\n".join(lineas)
