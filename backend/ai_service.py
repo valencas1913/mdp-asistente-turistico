@@ -1,24 +1,28 @@
 """
 ai_service.py
-Integración con DeepSeek (API compatible con OpenAI) para generar
-itinerarios turísticos personalizados usando como contexto:
+Integración con Groq (API compatible con OpenAI, con capa gratuita sin tarjeta)
+para generar itinerarios turísticos personalizados usando como contexto:
   - el clima actual (OpenWeatherMap)
   - las actividades reales de la base de datos
   - lo que escribe el usuario en lenguaje natural
 
-Si no hay DEEPSEEK_API_KEY configurada, o si DeepSeek falla, se devuelve
-un itinerario de demostración armado localmente para que la app siga andando.
+Se prueba primero GROQ_MODEL y, si falla (límite de uso, modelo retirado, error
+del servidor), se prueba GROQ_MODEL_FALLBACK. Si los dos fallan, o si no hay
+GROQ_API_KEY, se devuelve un itinerario de demostración armado localmente.
 """
 
 import os
 import time
 import requests
 
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
-DEEPSEEK_URL = os.environ.get(
-    "DEEPSEEK_URL", "https://api.deepseek.com/chat/completions"
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_URL = os.environ.get(
+    "GROQ_URL", "https://api.groq.com/openai/v1/chat/completions"
 )
+# Groq retiró los modelos Llama 3.x de la capa gratuita (16/08/2026).
+# Los nombres son configurables por variable de entorno por si cambian de nuevo.
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+GROQ_MODEL_FALLBACK = os.environ.get("GROQ_MODEL_FALLBACK", "openai/gpt-oss-120b")
 
 SYSTEM_PROMPT = (
     "Sos el Asistente Turístico y Cultural Autónomo de Mar del Plata, Argentina. "
@@ -46,28 +50,32 @@ def _construir_contexto(clima: dict, actividades: list) -> str:
     )
 
 
-def _llamar_deepseek(mensaje_usuario: str, contexto: str) -> str:
+def _llamar_groq(modelo: str, mensaje_usuario: str, contexto: str) -> str:
+    cuerpo = {
+        "model": modelo,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"CONTEXTO:\n{contexto}\n\nPEDIDO DEL USUARIO: {mensaje_usuario}",
+            },
+        ],
+        # los modelos "gpt-oss" razonan antes de responder y ese razonamiento
+        # cuenta dentro del límite: hay que dejar margen para no cortar la respuesta
+        "max_completion_tokens": 2048,
+        "temperature": 0.7,
+    }
+    if modelo.startswith("openai/gpt-oss"):
+        cuerpo["reasoning_effort"] = "low"
+
     resp = requests.post(
-        DEEPSEEK_URL,
+        GROQ_URL,
         headers={
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Authorization": f"Bearer {GROQ_API_KEY}",
             "Content-Type": "application/json",
         },
-        json={
-            "model": DEEPSEEK_MODEL,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"CONTEXTO:\n{contexto}\n\nPEDIDO DEL USUARIO: {mensaje_usuario}",
-                },
-            ],
-            "max_tokens": 1024,
-            "stream": False,
-            # sin "pensar" de más: más rápido y no gasta tokens en razonamiento
-            "thinking": {"type": "disabled"},
-        },
-        timeout=45,
+        json=cuerpo,
+        timeout=30,
     )
     resp.raise_for_status()
     data = resp.json()
@@ -75,40 +83,44 @@ def _llamar_deepseek(mensaje_usuario: str, contexto: str) -> str:
 
 
 def generar_itinerario(mensaje_usuario: str, clima: dict, actividades: list) -> dict:
-    """Devuelve {'respuesta': texto, 'fuente': 'deepseek' | 'demo'} (+ 'error' si falló)."""
-    if not DEEPSEEK_API_KEY:
+    """Devuelve {'respuesta': texto, 'fuente': 'groq' | 'demo'} (+ 'error' si falló)."""
+    if not GROQ_API_KEY:
         return {
             "respuesta": _itinerario_demo(mensaje_usuario, clima, actividades),
             "fuente": "demo",
-            "error": "Falta DEEPSEEK_API_KEY en el servidor",
+            "error": "Falta GROQ_API_KEY en el servidor",
         }
 
     contexto = _construir_contexto(clima, actividades)
-    ultimo_error = ""
+    modelos = [GROQ_MODEL]
+    if GROQ_MODEL_FALLBACK and GROQ_MODEL_FALLBACK != GROQ_MODEL:
+        modelos.append(GROQ_MODEL_FALLBACK)
 
-    # hasta 2 intentos: los errores pasajeros (429/500/503, timeouts) suelen resolverse solos
-    for intento in range(2):
+    errores = []
+    for i, modelo in enumerate(modelos):
         try:
-            texto = _llamar_deepseek(mensaje_usuario, contexto)
+            texto = _llamar_groq(modelo, mensaje_usuario, contexto)
             if texto:
-                return {"respuesta": texto, "fuente": "deepseek"}
-            ultimo_error = "DeepSeek devolvió una respuesta vacía"
+                return {"respuesta": texto, "fuente": "groq", "modelo": modelo}
+            motivo = "respuesta vacía"
         except requests.HTTPError as e:
             cuerpo = e.response.text[:300] if e.response is not None else ""
-            ultimo_error = f"HTTP {e.response.status_code if e.response is not None else '?'}: {cuerpo}"
+            codigo = e.response.status_code if e.response is not None else "?"
+            motivo = f"HTTP {codigo}: {cuerpo}"
         except requests.RequestException as e:
-            ultimo_error = str(e)
+            motivo = str(e)
         except (KeyError, IndexError, ValueError) as e:
-            ultimo_error = f"Respuesta inesperada de DeepSeek: {e}"
+            motivo = f"respuesta inesperada: {e}"
 
-        print(f"[ai_service] intento {intento + 1} falló: {ultimo_error}", flush=True)
-        if intento == 0:
-            time.sleep(1.5)
+        errores.append(f"{modelo} -> {motivo}")
+        print(f"[ai_service] falló {modelo}: {motivo}", flush=True)
+        if i < len(modelos) - 1:
+            time.sleep(1)
 
     return {
         "respuesta": _itinerario_demo(mensaje_usuario, clima, actividades),
         "fuente": "demo",
-        "error": ultimo_error,
+        "error": " | ".join(errores),
     }
 
 
