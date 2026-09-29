@@ -1,12 +1,11 @@
 // favoritos.js
 // Auth mínima (registro/login) + guardado de favoritos por usuario.
-// El usuario logueado se persiste en memoria + localStorage del navegador
-// (no confundir con el storage de Artifacts: esto es una PWA real).
+// El usuario logueado se persiste en memoria + localStorage del navegador.
 
 const Favoritos = {
   usuario: null,
-  lista: [], // [{id_favorito, id_actividad, ...}]
-  modoLogin: false,
+  lista: [],
+  modo: "registro", // "registro" | "login"
 
   init() {
     const guardado = localStorage.getItem("mdp_usuario");
@@ -21,40 +20,42 @@ const Favoritos = {
     if (this.usuario) this.cargarFavoritos();
 
     document.getElementById("auth-registro-btn").addEventListener("click", () => this._submit());
-    document.getElementById("auth-login-toggle").addEventListener("click", () => this._toggleModo());
+    document.getElementById("auth-tab-registro").addEventListener("click", () => this._cambiarModo("registro"));
+    document.getElementById("auth-tab-login").addEventListener("click", () => this._cambiarModo("login"));
     document.getElementById("auth-logout-btn").addEventListener("click", () => this._logout());
+
+    ["auth-nombre", "auth-email", "auth-password"].forEach((id) => {
+      document.getElementById(id).addEventListener("keydown", (e) => {
+        if (e.key === "Enter") this._submit();
+      });
+    });
   },
 
-  _toggleModo() {
-    this.modoLogin = !this.modoLogin;
-    const btn = document.getElementById("auth-registro-btn");
-    const toggle = document.getElementById("auth-login-toggle");
-    const nombreInput = document.getElementById("auth-nombre");
-    if (this.modoLogin) {
-      btn.textContent = "Iniciar sesión";
-      toggle.textContent = "No tengo cuenta, crear una";
-      nombreInput.style.display = "none";
-    } else {
-      btn.textContent = "Crear cuenta";
-      toggle.textContent = "Ya tengo cuenta, iniciar sesión";
-      nombreInput.style.display = "block";
-    }
+  _cambiarModo(modo) {
+    this.modo = modo;
+    const esRegistro = modo === "registro";
+
+    document.getElementById("auth-tab-registro").classList.toggle("active", esRegistro);
+    document.getElementById("auth-tab-login").classList.toggle("active", !esRegistro);
+    document.getElementById("auth-field-nombre").style.display = esRegistro ? "flex" : "none";
+    document.getElementById("auth-registro-btn").textContent = esRegistro ? "Crear cuenta" : "Iniciar sesión";
   },
 
   async _submit() {
     const nombre = document.getElementById("auth-nombre").value.trim();
     const email = document.getElementById("auth-email").value.trim();
     const password = document.getElementById("auth-password").value;
+    const esRegistro = this.modo === "registro";
 
-    if (!email || !password || (!this.modoLogin && !nombre)) {
+    if (!email || !password || (esRegistro && !nombre)) {
       alert("Completá todos los campos.");
       return;
     }
 
     try {
-      const usuario = this.modoLogin
-        ? await Api.loginUsuario(email, password)
-        : await Api.registrarUsuario(nombre, email, password);
+      const usuario = esRegistro
+        ? await Api.registrarUsuario(nombre, email, password)
+        : await Api.loginUsuario(email, password);
 
       this.usuario = usuario;
       localStorage.setItem("mdp_usuario", JSON.stringify(usuario));
@@ -76,13 +77,17 @@ const Favoritos = {
   _renderAuth() {
     const loggedOut = document.getElementById("auth-logged-out");
     const loggedIn = document.getElementById("auth-logged-in");
+
     if (this.usuario) {
       loggedOut.style.display = "none";
       loggedIn.style.display = "block";
       document.getElementById("auth-user-nombre").textContent = this.usuario.nombre;
+      document.getElementById("auth-user-email").textContent = this.usuario.email;
+      document.getElementById("profile-avatar").textContent = (this.usuario.nombre || "?").charAt(0);
     } else {
       loggedOut.style.display = "block";
       loggedIn.style.display = "none";
+      this._cambiarModo(this.modo);
     }
   },
 
@@ -129,6 +134,9 @@ const Favoritos = {
   _renderLista() {
     const cont = document.getElementById("favoritos-list");
     cont.innerHTML = "";
+
+    const contador = document.getElementById("profile-fav-count");
+    if (contador) contador.textContent = this.lista.length;
 
     if (!this.usuario) return;
 

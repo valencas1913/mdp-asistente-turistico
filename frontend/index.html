@@ -7,9 +7,9 @@
 <meta name="description" content="Actividades, clima en vivo y un asistente con IA para recorrer Mar del Plata." />
 
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#0F2E38" />
+<meta name="theme-color" content="#0a0e14" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="MdP Guide" />
 
@@ -19,6 +19,7 @@
 
   <!-- ===== HERO / CLIMA ===== -->
   <header class="hero">
+    <div class="hero-glow"></div>
     <div class="hero-top">
       <div class="brand">
         <div class="brand-mark">🗼</div>
@@ -27,7 +28,7 @@
           <small>Asistente turístico &amp; cultural</small>
         </div>
       </div>
-      <span class="location-pill" id="fecha-actual">Mar del Plata, AR</span>
+      <span class="location-pill">Mar del Plata, AR</span>
     </div>
 
     <div class="weather-card">
@@ -95,26 +96,53 @@
       </div>
     </section>
 
-    <!-- ===== VISTA: FAVORITOS ===== -->
+    <!-- ===== VISTA: CUENTA / FAVORITOS ===== -->
     <section class="view" id="view-favoritos">
-      <h2 class="section-title">Tu cuenta</h2>
 
-      <div class="auth-box" id="auth-box">
-        <div id="auth-logged-out">
-          <p class="section-sub" style="margin-top:0;">Creá una cuenta para guardar tus favoritos.</p>
-          <input type="text" id="auth-nombre" placeholder="Nombre" />
-          <input type="email" id="auth-email" placeholder="Email" />
-          <input type="password" id="auth-password" placeholder="Contraseña" />
-          <button id="auth-registro-btn">Crear cuenta</button>
-          <p style="text-align:center;margin:10px 0 0;">
-            <button class="link-btn" id="auth-login-toggle">Ya tengo cuenta, iniciar sesión</button>
-          </p>
+      <!-- Estado: sin sesión iniciada -->
+      <div id="auth-logged-out" class="auth-card">
+        <div class="auth-card-head">
+          <div class="auth-orb">🌊</div>
+          <h2 class="auth-title">Tu cuenta</h2>
+          <p class="auth-subtitle">Guardá tus lugares favoritos y accedé desde cualquier dispositivo.</p>
         </div>
-        <div id="auth-logged-in" style="display:none;">
-          <div class="auth-status">
-            <span>👋 Hola, <strong id="auth-user-nombre"></strong></span>
-            <button class="link-btn" id="auth-logout-btn">Cerrar sesión</button>
+
+        <div class="auth-tabs">
+          <button class="auth-tab active" id="auth-tab-registro" data-mode="registro">Crear cuenta</button>
+          <button class="auth-tab" id="auth-tab-login" data-mode="login">Iniciar sesión</button>
+        </div>
+
+        <div class="auth-fields">
+          <label class="auth-field" id="auth-field-nombre">
+            <span>Nombre</span>
+            <input type="text" id="auth-nombre" placeholder="¿Cómo te llamás?" />
+          </label>
+          <label class="auth-field">
+            <span>Email</span>
+            <input type="email" id="auth-email" placeholder="vos@email.com" />
+          </label>
+          <label class="auth-field">
+            <span>Contraseña</span>
+            <input type="password" id="auth-password" placeholder="••••••••" />
+          </label>
+        </div>
+
+        <button id="auth-registro-btn" class="auth-submit">Crear cuenta</button>
+      </div>
+
+      <!-- Estado: con sesión iniciada -->
+      <div id="auth-logged-in" class="profile-card" style="display:none;">
+        <div class="profile-top">
+          <div class="profile-avatar" id="profile-avatar">V</div>
+          <div>
+            <p class="profile-name" id="auth-user-nombre">—</p>
+            <p class="profile-email" id="auth-user-email"></p>
           </div>
+          <button class="logout-btn" id="auth-logout-btn" title="Cerrar sesión">⏻</button>
+        </div>
+        <div class="profile-stat">
+          <span class="profile-stat-num" id="profile-fav-count">0</span>
+          <span class="profile-stat-label">lugares guardados</span>
         </div>
       </div>
 
@@ -136,16 +164,16 @@
   <!-- ===== TAB BAR ===== -->
   <nav class="tabbar">
     <button class="tab-btn active" data-view="inicio">
-      <span class="icon">🏠</span>Inicio
+      <span class="icon">🏠</span><span class="label">Inicio</span>
     </button>
     <button class="tab-btn" data-view="actividades">
-      <span class="icon">🗺️</span>Actividades
+      <span class="icon">🗺️</span><span class="label">Actividades</span>
     </button>
     <button class="tab-btn" data-view="asistente">
-      <span class="icon">✨</span>Asistente
+      <span class="icon">✨</span><span class="label">Asistente</span>
     </button>
     <button class="tab-btn" data-view="favoritos">
-      <span class="icon">❤️</span>Favoritos
+      <span class="icon">❤️</span><span class="label">Cuenta</span>
     </button>
   </nav>
 
