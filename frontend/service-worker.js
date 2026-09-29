@@ -1,4 +1,9 @@
-const CACHE_NAME = "mdp-guide-v1";
+// service-worker.js
+// v2: red primero, caché como respaldo solo sin conexión.
+// (v1 guardaba todo en caché primero, por eso el diseño no se
+// actualizaba solo en los celulares con la app ya instalada)
+
+const CACHE_NAME = "mdp-guide-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -33,31 +38,34 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Estrategia: network-first para /api/, cache-first para el resto (app shell)
+// Red primero para TODO (HTML, CSS, JS y /api/). Si el pedido de red
+// falla (sin internet), recién ahí se usa lo guardado en caché.
+// Esto prioriza que siempre se vea la última versión publicada; el
+// modo offline queda como respaldo, no como comportamiento normal.
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-
-  if (url.pathname.includes("/api/")) {
-    event.respondWith(
-      fetch(event.request).catch(() =>
-        new Response(
-          JSON.stringify({ error: "Sin conexión. Mostrando datos guardados." }),
-          { headers: { "Content-Type": "application/json" } }
-        )
-      )
-    );
-    return;
-  }
+  const esApi = url.pathname.includes("/api/");
 
   event.respondWith(
-    caches.match(event.request).then(
-      (cached) =>
-        cached ||
-        fetch(event.request).then((response) => {
+    fetch(event.request)
+      .then((response) => {
+        if (!esApi && event.request.method === "GET" && response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          return response;
-        })
-    )
+        }
+        return response;
+      })
+      .catch(() =>
+        caches.match(event.request).then(
+          (cached) =>
+            cached ||
+            (esApi
+              ? new Response(
+                  JSON.stringify({ error: "Sin conexión. Mostrando datos guardados." }),
+                  { headers: { "Content-Type": "application/json" } }
+                )
+              : Response.error())
+        )
+      )
   );
 });
